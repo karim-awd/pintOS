@@ -1,12 +1,15 @@
 #include "userprog/syscall.h"
+#include "userprog/pagedir.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <threads/vaddr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
 static void syscall_handler(struct intr_frame *);
-
+bool validate(int* ptr , int argumentsNum);
 static int write(int fd, void *pVoid, unsigned int size);
+
 
 void
 syscall_init(void) {
@@ -18,8 +21,13 @@ syscall_init(void) {
 static void
 syscall_handler(struct intr_frame *f UNUSED) {
     // get system call number
-    // and for the given number of arguments we choose from syscall0/1/2/3
-    // HOW TO SEND THE ENUM (SYSCALL NUMBER) TO syscall0/1/2/3 ????????
+
+    //validation
+    if(!validate(f->esp, 1)){  // bad pointer
+        //exit(-1);
+    }
+
+
     switch (*(int *) (f->esp)) {
         case SYS_HALT : {
             break;
@@ -49,6 +57,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             break;
         }
         case SYS_WRITE : {
+
+            validate(((int*)f->esp +1),3);
+
             int fd =*((int*)f->esp + 1);
             void* buffer = (void*)(*((int*)f->esp + 2));
             unsigned size =*((unsigned*)f->esp + 3);
@@ -77,5 +88,23 @@ syscall_handler(struct intr_frame *f UNUSED) {
 
 int write(int fd, void *pVoid, unsigned int size) {
     return 0;
+}
+
+
+bool
+validate(int* ptr , int argumentsNum){
+    for (int argumentIndex = 0; argumentIndex < argumentsNum ; argumentIndex++) {
+        int* currentPtr =ptr+argumentIndex;
+        if (currentPtr != NULL) {  // Null Check
+            if(is_user_vaddr(currentPtr)){   // in User Virtual Memory space check
+                uint32_t* pd = active_pd();                                   // in a page
+                if(pagedir_get_page(pd,currentPtr) != NULL){
+                    return true;
+                }
+            }
+        }
+
+    }
+    return false;
 }
 
