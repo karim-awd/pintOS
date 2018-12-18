@@ -3,12 +3,42 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <threads/vaddr.h>
+#include <filesys/filesys.h>
+#include <threads/malloc.h>
+#include <filesys/file.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "list.h"
+#include "process.h"
+
+struct opened_file_entry {
+    struct file * file;
+    int fd;
+    struct list_elem elem;
+};
+
+struct opened_file_entry* list_search(struct list* files, int fd)
+{
+
+    struct list_elem *e;
+
+    for (e = list_begin (files); e != list_end (files);
+         e = list_next (e))
+    {
+        struct opened_file_entry *f = list_entry (e, struct opened_file_entry, elem);
+        if(f->fd == fd)
+            return f;
+    }
+    return NULL;
+}
+
+
 
 static void syscall_handler(struct intr_frame *);
 bool validate(int* ptr , int argumentsNum);
 static int write(int fd, void *pVoid, unsigned int size);
+
+
 
 
 void
@@ -86,9 +116,41 @@ syscall_handler(struct intr_frame *f UNUSED) {
 */
 }
 
+bool create (const char* file, unsigned initial_size){
+    return filesys_create(file, initial_size);
+}
+
+
+int read (int fd, void* buffer, unsigned size){
+
+}
+
+
 int write(int fd, void *pVoid, unsigned int size) {
     return 0;
 }
+
+
+
+int open (const char *file){
+    struct file * openedFile = filesys_open(filesys_open);
+    if (openedFile == NULL)
+        return -1;
+    else{
+
+        struct opened_file_entry *file_entry = malloc(sizeof(*file_entry));
+        file_entry->file = openedFile;
+        file_entry->fd = thread_current()->fd_value;
+        thread_current()->fd_value ++;
+        list_push_back(&thread_current()->opened_files, &file_entry->elem);
+        return file_entry->fd;
+    }
+}
+
+int filesize (int fd){
+    return file_length(list_search(&thread_current()->opened_files,fd)->file);
+}
+
 
 
 bool
@@ -107,4 +169,6 @@ validate(int* ptr , int argumentsNum){
     }
     return false;
 }
+
+
 
