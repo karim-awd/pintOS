@@ -91,6 +91,7 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
 
     struct list opened_files;
+    struct list created_files;
     int fd_value;
 
     /* Shared between thread.c and synch.c. */

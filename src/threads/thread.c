@@ -96,7 +96,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-  list_init(&files_lock);
+  lock_init(&files_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -500,6 +500,7 @@ init_thread (struct thread *t, const char *name, int priority)
   intr_set_level (old_level);
 
   list_init(&t->opened_files);
+  list_init(&t->created_files);
   t->fd_value = 2;
 }
 

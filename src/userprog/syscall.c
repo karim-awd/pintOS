@@ -13,6 +13,7 @@
 #include "threads/thread.h"
 #include "list.h"
 #include "process.h"
+#include <string.h>
 
 void halt();
 void exit(int status);
@@ -28,17 +29,36 @@ void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
 static void syscall_handler(struct intr_frame *);
-bool validate(int* ptr , int argumentsNum);
+bool validate(void* ptr , int argumentsNum);
 
 //todo note that you send f->esp (void*) and recive an (int*);
 
+struct created_file_entry {
+    const char *name;
+    struct list_elem elem;
+};
 
 
 struct opened_file_entry {
     struct file * file;
+    const char *name;
     int fd;
     struct list_elem elem;
 };
+struct created_file_entry* list_search_created(struct list* files, const char *name)
+{
+
+    struct list_elem *e;
+
+    for (e = list_begin (files); e != list_end (files);
+         e = list_next (e))
+    {
+        struct created_file_entry *f = list_entry (e, struct created_file_entry, elem);
+        if(strcmp(f->name , name))
+            return f;
+    }
+    return NULL;
+}
 
 struct opened_file_entry* list_search(struct list* files, int fd)
 {
@@ -55,6 +75,20 @@ struct opened_file_entry* list_search(struct list* files, int fd)
     return NULL;
 }
 
+struct opened_file_entry* list_search_name(struct list* files, char* name)
+{
+
+    struct list_elem *e;
+
+    for (e = list_begin (files); e != list_end (files);
+         e = list_next (e))
+    {
+        struct opened_file_entry *f = list_entry (e, struct opened_file_entry, elem);
+        if(f->name == name)
+            return f;
+    }
+    return NULL;
+}
 
 
 
@@ -111,7 +145,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             const char* file =(const char*)*((int*)(f->esp+4));         //todo char* from int warning
-            unsigned initial_size = *((unsigned *)(f->esp+4));
+            unsigned initial_size = *((unsigned *)(f->esp+8));
             acquire_files_lock();
             f->eax = (uint32_t) create(file, initial_size);
             release_files_lock();
@@ -128,6 +162,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
         }
         case SYS_OPEN : {
             if(!validate(f->esp+4,1)){
+
                 exit(-1);
             }
             const char* file = (const char*)*((int*)(f->esp+4));       //todo char* from int warning
@@ -220,12 +255,15 @@ void exit(int status){
 }
 
 pid_t exec(const char* cmd_line){
+    if(!validate(cmd_line,1)){
+        exit(-1);
+    }
     pid_t newId = process_execute(cmd_line);
     /* todo he parent process cannot return from the exec
      until it knows whether the child process
      successfully loaded its executable
     */
-    wait(newId);
+    //wait(newId);
     if(newId == TID_ERROR){
         return -1;
     }
@@ -238,10 +276,29 @@ int wait(pid_t pid){
 }
 
 bool create(const char* file, unsigned initial_size){
-    return filesys_create(file, initial_size);
+    if(!validate(file,1)){
+        exit(-1);
+    }
+    struct created_file_entry *created_file_entry = list_search_created(&thread_current()->created_files,file);
+    if(created_file_entry != NULL){
+        return filesys_create(file, initial_size);       // new create fails
+    }
+    else{
+        if(filesys_create(file, initial_size)){
+            created_file_entry = malloc(sizeof(*created_file_entry));
+            created_file_entry->name = file;
+            list_push_back(&thread_current()->created_files, &created_file_entry->elem);
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+    return false;
 }
 
 bool remove(const char* file){
+
     //todo if wrong
     /**
      * Remove the file but keep it for all running processes currently using it
@@ -251,7 +308,11 @@ bool remove(const char* file){
     return filesys_remove(file);
 }
 
+
 int open (const char *file){
+    if(!validate(file,1)){
+        exit(-1);
+    }
     struct file * openedFile = filesys_open(file);
     if (openedFile == NULL)
         return -1;
@@ -259,6 +320,7 @@ int open (const char *file){
         struct opened_file_entry *file_entry = malloc(sizeof(*file_entry));
         file_entry->file = openedFile;
         file_entry->fd = thread_current()->fd_value;
+        file_entry->name = file;
         thread_current()->fd_value ++;
         list_push_back(&thread_current()->opened_files, &file_entry->elem);
         return file_entry->fd;
@@ -270,7 +332,9 @@ int filesize (int fd){
 }
 
 int read (int fd, void* buffer, unsigned size){
-
+    if(!validate(buffer,1) || fd==1){
+        exit(-1);
+    }
     uint8_t* buf = (uint8_t*) buffer;
     if (fd == 0){
         for (int i= 0; i< size; i++){
@@ -290,48 +354,69 @@ int read (int fd, void* buffer, unsigned size){
 
 }
 
-int write(int fd, const void *buffer, unsigned size)  {
-    if(fd == 1 ){
-        putbuf(buffer,size);
+int write(int fd, const void *buffer, unsigned size) {
+    if (!validate(buffer, 1) || fd == 0 || fd < 0) {
+        exit(-1);
+    }
+
+    if (fd == 1) {
+        putbuf(buffer, size);
         return size;                 // todo there is no limit on size when using putbuf
     }
-    struct file* currentFile  = list_search(&thread_current()->opened_files,fd)->file;
-    if(currentFile == NULL){
+    struct opened_file_entry *currentFileEntry = list_search(&thread_current()->opened_files, fd);
+    if (currentFileEntry == NULL) {
         return 0;
     }
-    return file_write(currentFile,buffer,size);// size in file_write is off_t  and the return is off_t
+    struct file *currentFile = currentFileEntry->file;
+    return file_write(currentFile, buffer, size);// size in file_write is off_t  and the return is off_t
 }
 
 void seek(int fd, unsigned position){
-    struct file* file = list_search(&thread_current()->opened_files,fd)->file;
-    if(file!=NULL){
+    struct opened_file_entry *currentFileEntry = list_search(&thread_current()->opened_files, fd);
+    if (currentFileEntry == NULL) {
+        exit(-1);
+    }
+    struct file *currentFile = currentFileEntry->file;
+    if(currentFile!=NULL){
         if(position <= 0){
             position = 0;
         }
-        file_seek(file,position);
+        file_seek(currentFile,position);
     }
 }
 
 unsigned tell(int fd){
-    struct file * currentFile =list_search(&thread_current()->opened_files,fd)->file;
+    struct opened_file_entry *currentFileEntry = list_search(&thread_current()->opened_files, fd);
+    if (currentFileEntry == NULL) {
+        exit(-1);
+    }
+    struct file *currentFile = currentFileEntry->file;
     if(currentFile != NULL){
         return (unsigned)file_tell(currentFile);
     }
 }
 
 void close(int fd){
-    struct file * currentFile = list_search(&thread_current()->opened_files,fd)->file;
-    if (currentFile != NULL){
-        file_close(currentFile);
+    if(fd ==0 || fd == 1 || fd < 0){
+        exit(-1);
     }
+    struct opened_file_entry * currentFileEntery = list_search(&thread_current()->opened_files,fd);
+    if(currentFileEntery != NULL) {
+        struct file * currentFile = currentFileEntery->file;
+        if (currentFile != NULL) {
+            file_close(currentFile);
+            list_remove(&currentFileEntery->elem);
+        }
+    }
+
 }
 
 
 bool
-validate(int* ptr , int argumentsNum){
-    for (int argumentIndex = 0; argumentIndex < argumentsNum ; argumentIndex++) {
-        int* currentPtr =ptr+argumentIndex;
-        if (currentPtr != NULL) {  // Null Check
+validate(void* ptr , int argumentsNum){
+    for (int argumentIndex = 0; argumentIndex < (argumentsNum*4) ; argumentIndex++) {
+        void* currentPtr =ptr+argumentIndex;
+        if (currentPtr != NULL && currentPtr>0) {  // Null Check
             if(is_user_vaddr(currentPtr)){   // in User Virtual Memory space check
                 //uint32_t* pd = active_pd();                                   // in a page
                 if(pagedir_get_page(thread_current()->pagedir,currentPtr) != NULL){
