@@ -100,6 +100,7 @@ struct thread
 
     struct thread *my_parent;
     struct semaphore waiting_semaphore;
+    int valueMlhashLzma;
 
 
 

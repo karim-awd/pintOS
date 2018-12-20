@@ -40,7 +40,6 @@ process_execute(const char *file_name) {
     char *fn_copy;
     tid_t tid;
 
-    printf("%s\n",file_name);
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
     fn_copy = palloc_get_page(0);
@@ -50,16 +49,16 @@ process_execute(const char *file_name) {
 
 
     //extracting exec_name
-//    char *save_ptr ;
-//    char *exec_name = malloc (strlen(fn_copy)+1);
-//    if (exec_name == NULL)
-//        return TID_ERROR;
-//    strlcpy(exec_name, file_name, PGSIZE);
-//    exec_name = strtok_r(exec_name, " ", &save_ptr);
+    char *save_ptr ;
+    char *exec_name = malloc (strlen(fn_copy)+1);
+    if (exec_name == NULL)
+        return TID_ERROR;
+    strlcpy(exec_name, file_name, PGSIZE);
+    exec_name = strtok_r(exec_name, " ", &save_ptr);
 
 
     /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+    tid = thread_create(exec_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR) {
         palloc_free_page(fn_copy);
         //palloc_free_page(exec_name);
@@ -71,8 +70,11 @@ process_execute(const char *file_name) {
 
     struct child temp = {.child_tid = tid , .exit_status = -1 , .alive = true , .parent_is_waiting = false };
     struct child *c = &temp;
-    printf("Ana hena\n");
-    list_push_front(&(thread_current()->children_list) , &(c->child_elem));
+    //list_push_front(&(thread_current()->children_list) , &(c->child_elem));
+    //printf("%d" , list_size(&thread_current()->children_list));
+    //printf("Ana hena\n");
+
+
     return tid;
 }
 
@@ -121,28 +123,31 @@ int
 process_wait(tid_t child_tid UNUSED) {
 
 
-    struct list *current_thread_children_list = &(thread_current()->children_list);
-    struct list_elem *e;
-    for (e = list_begin (current_thread_children_list); e != list_end (current_thread_children_list);
-         e = list_next (e))
-    {
-        struct child *c = list_entry (e, struct child, child_elem);
-        if (c->child_tid == child_tid){
-            if (!c->alive){
-                return c->exit_status;
-            }
-            else {
-                c->parent_is_waiting = true;
-                sema_down(&thread_current() ->waiting_semaphore);
-                return c->exit_status;
-            }
-        }
-    }
-    return -1;
-//    while(true)
+    thread_current()->valueMlhashLzma = 1;
+    //sema_down(&thread_current()->waiting_semaphore);
+//    struct list *current_thread_children_list = &(thread_current()->children_list);
+//    struct list_elem *e;
+//    for (e = list_begin (current_thread_children_list); e != list_end (current_thread_children_list);
+//         e = list_next (e))
 //    {
-//        thread_yield();
+//        struct child *c = list_entry (e, struct child, child_elem);
+//        if (c->child_tid == child_tid){
+//            if (!c->alive){
+//                return c->exit_status;
+//            }
+//            else {
+//                c->parent_is_waiting = true;
+//                sema_down(&thread_current() ->waiting_semaphore);
+//                return c->exit_status;
+//            }
+//        }
 //    }
+//    return -1;
+    while(thread_current()->valueMlhashLzma == 1 )
+    {
+        thread_yield();
+    }
+    return 0;
 }
 
 /* Free the current process's resources. */
@@ -151,23 +156,28 @@ process_exit(int status) {
     struct thread *cur = thread_current();
     uint32_t *pd;
     struct thread *my_parent = thread_current()->my_parent;
-    struct list *parent_children_list = &(my_parent->children_list);
-    struct list_elem *e;
-    for (e = list_begin (parent_children_list); e != list_end (parent_children_list);
-         e = list_next (e))
-    {
-        struct child *c = list_entry (e, struct child, child_elem);
-        if (c->child_tid == thread_current()->tid){
-            //todo set the exit state for my self in my parent
-            c->exit_status = status;
-            c->alive = false;
-            if (c->parent_is_waiting){
-                sema_up(&my_parent->waiting_semaphore);
-            }
-            break;
-        }
-    }
+
+    //sema_up(&my_parent->waiting_semaphore); //dh ziada
+    my_parent->valueMlhashLzma = 0;
+//    struct list *parent_children_list = &(my_parent->children_list);
+//    struct list_elem *e;
+//    for (e = list_begin (parent_children_list); e != list_end (parent_children_list);
+//         e = list_next (e))
+//    {
+//        struct child *c = list_entry (e, struct child, child_elem);
+//        if (c->child_tid == thread_current()->tid){
+//            //todo set the exit state for my self in my parent
+//            c->exit_status = status;
+//            c->alive = false;
+//            if (c->parent_is_waiting){
+//                sema_up(&my_parent->waiting_semaphore);
+//            }
+//            break;
+//        }
+//    }
     //todo free resources
+
+    printf ("%s: exit(%d)\n",thread_current()->name, status );
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
     pd = cur->pagedir;
@@ -540,7 +550,7 @@ setup_stack(void **esp, char **argv, int argc) {
             *esp = *esp - 4;
             memset(*esp,NULL, sizeof(void*));
 
-            //hex_dump((uintptr_t)*esp, *esp, sizeof(char) * 100, true);
+           // hex_dump((uintptr_t)*esp, *esp, sizeof(char) * 100, true);
         } else
             palloc_free_page(kpage);
     }
