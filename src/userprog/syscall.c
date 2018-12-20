@@ -145,7 +145,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             const char* file =(const char*)*((int*)(f->esp+4));         //todo char* from int warning
-            unsigned initial_size = *((unsigned *)(f->esp+8));
+            unsigned initial_size = *((unsigned *)(f->esp+4));
             acquire_files_lock();
             f->eax = (uint32_t) create(file, initial_size);
             release_files_lock();
@@ -162,7 +162,6 @@ syscall_handler(struct intr_frame *f UNUSED) {
         }
         case SYS_OPEN : {
             if(!validate(f->esp+4,1)){
-
                 exit(-1);
             }
             const char* file = (const char*)*((int*)(f->esp+4));       //todo char* from int warning
@@ -272,7 +271,7 @@ pid_t exec(const char* cmd_line){
 }
 
 int wait(pid_t pid){
-    process_wait(pid);
+    return process_wait(pid);
 }
 
 bool create(const char* file, unsigned initial_size){
@@ -298,7 +297,6 @@ bool create(const char* file, unsigned initial_size){
 }
 
 bool remove(const char* file){
-
     //todo if wrong
     /**
      * Remove the file but keep it for all running processes currently using it
@@ -307,7 +305,6 @@ bool remove(const char* file){
      */
     return filesys_remove(file);
 }
-
 
 int open (const char *file){
     if(!validate(file,1)){
@@ -354,13 +351,12 @@ int read (int fd, void* buffer, unsigned size){
 
 }
 
-int write(int fd, const void *buffer, unsigned size) {
+int write(int fd, const void *buffer, unsigned size)  {
     if (!validate(buffer, 1) || fd == 0 || fd < 0) {
         exit(-1);
     }
-
-    if (fd == 1) {
-        putbuf(buffer, size);
+    if(fd == 1 ){
+        putbuf(buffer,size);
         return size;                 // todo there is no limit on size when using putbuf
     }
     struct opened_file_entry *currentFileEntry = list_search(&thread_current()->opened_files, fd);

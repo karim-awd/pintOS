@@ -23,12 +23,14 @@
 static thread_func start_process NO_RETURN;
 
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
-struct child{
+
+struct child {
     tid_t child_tid; //child id
     int exit_status;
     bool alive;
     bool parent_is_waiting;
     struct list_elem child_elem;
+    bool once_waited;
 };
 
 /* Starts a new thread running a user program loaded from
@@ -49,8 +51,8 @@ process_execute(const char *file_name) {
 
 
     //extracting exec_name
-    char *save_ptr ;
-    char *exec_name = malloc (strlen(fn_copy)+1);
+    char *save_ptr;
+    char *exec_name = malloc(strlen(fn_copy) + 1);
     if (exec_name == NULL)
         return TID_ERROR;
     strlcpy(exec_name, file_name, PGSIZE);
@@ -61,19 +63,23 @@ process_execute(const char *file_name) {
     tid = thread_create(exec_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR) {
         palloc_free_page(fn_copy);
-        //palloc_free_page(exec_name);
+        palloc_free_page(exec_name);
     }
     struct thread *t = thread_get(tid);
-    list_init(&(t->children_list));
+    list_init(&t->children_list);
     t->my_parent = thread_current();
-    sema_init(&(t->waiting_semaphore),0);
 
-    struct child temp = {.child_tid = tid , .exit_status = -1 , .alive = true , .parent_is_waiting = false };
-    struct child *c = &temp;
-    //list_push_front(&(thread_current()->children_list) , &(c->child_elem));
-    //printf("%d" , list_size(&thread_current()->children_list));
-    //printf("Ana hena\n");
 
+
+    struct child *c;
+
+    c = malloc(sizeof(struct child));
+    c->child_tid = tid;
+    c->exit_status = -1;
+    c->alive = true;
+    c->parent_is_waiting = false;
+    c->once_waited = false;
+    list_push_front(&(thread_current()->children_list), &c->child_elem);
 
     return tid;
 }
@@ -120,64 +126,62 @@ start_process(void *file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait(tid_t child_tid UNUSED) {
+process_wait(tid_t child_tid) {
 
+    struct list *current_thread_children_list = &(thread_current()->children_list);
+    struct list_elem *e;
 
-    thread_current()->valueMlhashLzma = 1;
-    //sema_down(&thread_current()->waiting_semaphore);
-//    struct list *current_thread_children_list = &(thread_current()->children_list);
-//    struct list_elem *e;
-//    for (e = list_begin (current_thread_children_list); e != list_end (current_thread_children_list);
-//         e = list_next (e))
-//    {
-//        struct child *c = list_entry (e, struct child, child_elem);
-//        if (c->child_tid == child_tid){
-//            if (!c->alive){
-//                return c->exit_status;
-//            }
-//            else {
-//                c->parent_is_waiting = true;
-//                sema_down(&thread_current() ->waiting_semaphore);
-//                return c->exit_status;
-//            }
-//        }
-//    }
-//    return -1;
-    while(thread_current()->valueMlhashLzma == 1 )
-    {
-        thread_yield();
+    for (e = list_begin(current_thread_children_list); e != list_end(current_thread_children_list);
+         e = list_next(e)) {
+
+        struct child *c = list_entry (e, struct child, child_elem);
+        if (c->child_tid == child_tid) {
+            if (c->once_waited == true){
+                return -1;
+            }
+            if (!(c->alive)) {
+                return c->exit_status;
+            } else {
+                c->once_waited =true;
+                c->parent_is_waiting = true;
+                sema_init(&thread_current()->waiting_semaphore, 0);
+                sema_down(&thread_current()->waiting_semaphore);
+                return c->exit_status;
+            }
+        }
     }
-    return 0;
+    return -1;
+
 }
 
 /* Free the current process's resources. */
 void
 process_exit(int status) {
+
     struct thread *cur = thread_current();
     uint32_t *pd;
     struct thread *my_parent = thread_current()->my_parent;
+    struct list *parent_children_list = &(my_parent->children_list);
+    struct list_elem *e;
+    for (e = list_begin(parent_children_list); e != list_end(parent_children_list);
+         e = list_next(e)) {
+        struct child *c = list_entry (e, struct child, child_elem);
+        if (c->child_tid == thread_current()->tid) {
+            //todo set the exit state for my self in my parent
+            c->alive = false;
+            c->exit_status = status;
+            if (c->parent_is_waiting) {
+                sema_up(&my_parent->waiting_semaphore);
+            }
+            break;
+        }
+    }
 
-    //sema_up(&my_parent->waiting_semaphore); //dh ziada
-    my_parent->valueMlhashLzma = 0;
-//    struct list *parent_children_list = &(my_parent->children_list);
-//    struct list_elem *e;
-//    for (e = list_begin (parent_children_list); e != list_end (parent_children_list);
-//         e = list_next (e))
-//    {
-//        struct child *c = list_entry (e, struct child, child_elem);
-//        if (c->child_tid == thread_current()->tid){
-//            //todo set the exit state for my self in my parent
-//            c->exit_status = status;
-//            c->alive = false;
-//            if (c->parent_is_waiting){
-//                sema_up(&my_parent->waiting_semaphore);
-//            }
-//            break;
-//        }
-//    }
+
+
     //todo free resources
 
-    printf ("%s: exit(%d)\n",thread_current()->name, status );
+    printf("%s: exit(%d)\n", thread_current()->name, status);
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
     pd = cur->pagedir;
@@ -527,30 +531,30 @@ setup_stack(void **esp, char **argv, int argc) {
                 memcpy(*esp, argv[j], (strlen(argv[j]) + 1) * sizeof(char));
             }
 
-            while((int)*esp%4 != 0) {
+            while ((int) *esp % 4 != 0) {
                 uint8_t word_align = 0;
                 *esp = *esp - sizeof(uint8_t);
                 memset(*esp, word_align, sizeof(uint8_t));
             }
 
             *esp = *esp - 4;
-            memset(*esp , 0 , sizeof(int));
-            for (int k = argc-1; k >= 0; --k) {
-                *esp = *esp - 4* sizeof(char);
-                memcpy(*esp, refArray[k], (sizeof(char)*4) );
+            memset(*esp, 0, sizeof(int));
+            for (int k = argc - 1; k >= 0; --k) {
+                *esp = *esp - 4 * sizeof(char);
+                memcpy(*esp, refArray[k], (sizeof(char) * 4));
 
 
             }
-            char** temp = malloc(sizeof(*esp));
+            char **temp = malloc(sizeof(*esp));
             *temp = *esp;
-            *esp = *esp - sizeof(char**);
-            memcpy(*esp , temp , sizeof(char**));
+            *esp = *esp - sizeof(char **);
+            memcpy(*esp, temp, sizeof(char **));
             *esp = *esp - 4;
-            memcpy(*esp,&argc, sizeof(uint32_t ));
+            memcpy(*esp, &argc, sizeof(uint32_t));
             *esp = *esp - 4;
-            memset(*esp,NULL, sizeof(void*));
+            memset(*esp, NULL, sizeof(void *));
 
-           // hex_dump((uintptr_t)*esp, *esp, sizeof(char) * 100, true);
+            // hex_dump((uintptr_t)*esp, *esp, sizeof(char) * 100, true);
         } else
             palloc_free_page(kpage);
     }
