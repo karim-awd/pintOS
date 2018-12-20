@@ -296,7 +296,10 @@ unsigned tell(int fd){
 }
 
 void close(int fd){
-
+    struct file * currentFile = list_search(&thread_current()->opened_files,fd)->file;
+    if (currentFile != NULL){
+        file_close(currentFile);
+    }
 }
 
 
