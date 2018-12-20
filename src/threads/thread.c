@@ -183,6 +183,9 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+
+
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -278,12 +281,12 @@ thread_tid (void)
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
-thread_exit (void) 
+thread_exit (int status)
 {
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  process_exit ();
+  process_exit (status);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -375,6 +378,28 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
+
+//get thread by its tid
+struct thread *
+thread_get(tid_t tid)
+{
+  struct list_elem *e;
+  struct thread * dest_thread = NULL;
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    if (tid == t->tid){
+      dest_thread = t;
+      break;
+    }
+  }
+  intr_set_level (old_level);
+  return dest_thread;
+}
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -422,7 +447,7 @@ kernel_thread (thread_func *function, void *aux)
 
   intr_enable ();       /* The scheduler runs with interrupts off. */
   function (aux);       /* Execute the thread function. */
-  thread_exit ();       /* If function() returns, kill the thread. */
+  thread_exit (-1);       /* If function() returns, kill the thread. */
 }
 
 /* Returns the running thread. */

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <threads/malloc.h>
+#include <threads/synch.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -22,6 +23,13 @@
 static thread_func start_process NO_RETURN;
 
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
+struct child{
+    tid_t child_tid; //child id
+    int exit_status;
+    bool alive;
+    bool parent_is_waiting;
+    struct list_elem child_elem;
+};
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -56,6 +64,19 @@ process_execute(const char *file_name) {
         palloc_free_page(fn_copy);
         //palloc_free_page(exec_name);
     }
+    struct thread *t = thread_get(tid);
+    list_init(&t->children_list);
+    t->my_parent = thread_current();
+    sema_init(t->waiting_semaphore,0);
+
+    struct child temp = {.child_tid =tid , .exit_status = -1 , .alive = true , .parent_is_waiting = false };
+    struct child *c = &temp;
+
+    list_push_front(&thread_current()->children_list , &(c->child_elem));
+
+
+
+
     return tid;
 }
 
@@ -79,7 +100,7 @@ start_process(void *file_name_) {
     /* If load failed, quit. */
     palloc_free_page(file_name);
     if (!success)
-        thread_exit();
+        thread_exit(-1);
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -102,20 +123,56 @@ start_process(void *file_name_) {
    does nothing. */
 int
 process_wait(tid_t child_tid UNUSED) {
-//    while(1);
-//    return -1;
-    while(true)
+
+
+    struct list *current_thread_children_list = &(thread_current()->children_list);
+    struct list_elem *e;
+    for (e = list_begin (current_thread_children_list); e != list_end (current_thread_children_list);
+         e = list_next (e))
     {
-        thread_yield();
+        struct child *c = list_entry (e, struct child, child_elem);
+        if (c->child_tid == child_tid){
+            if (!c->alive){
+                return c->exit_status;
+            }
+            else {
+                c->parent_is_waiting = true;
+                sema_down(thread_current() ->waiting_semaphore);
+                return c->exit_status;
+            }
+
+        }
     }
+    return -1;
+//    while(true)
+//    {
+//        thread_yield();
+//    }
 }
 
 /* Free the current process's resources. */
 void
-process_exit(void) {
+process_exit(int status) {
     struct thread *cur = thread_current();
     uint32_t *pd;
-
+    struct thread *my_parent = thread_current()->my_parent;
+    struct list *parent_children_list = &(my_parent->children_list);
+    struct list_elem *e;
+    for (e = list_begin (parent_children_list); e != list_end (parent_children_list);
+         e = list_next (e))
+    {
+        struct child *c = list_entry (e, struct child, child_elem);
+        if (c->child_tid == thread_current()->tid){
+            //todo set the exit state for my self in my parent
+            c->exit_status = status;
+            c->alive = false;
+            if (c->parent_is_waiting){
+                sema_up(my_parent->waiting_semaphore);
+            }
+            break;
+        }
+    }
+    //todo free resources
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
     pd = cur->pagedir;

@@ -5,6 +5,7 @@
 #include <threads/vaddr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "process.h"
 
 static void syscall_handler(struct intr_frame *);
 bool validate(int* ptr , int argumentsNum);
@@ -82,12 +83,16 @@ syscall_handler(struct intr_frame *f UNUSED) {
 
 /*
   printf ("system call!\n");
-  thread_exit ();
+  thread_exit (-1);
 */
 }
 
 int write(int fd, void *pVoid, unsigned int size) {
     return 0;
+}
+
+int wait(tid_t pid){
+    process_wait(pid);
 }
 
 
