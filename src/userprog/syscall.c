@@ -6,6 +6,7 @@
 #include <filesys/filesys.h>
 #include <threads/malloc.h>
 #include <filesys/file.h>
+#include <devices/input.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "list.h"
@@ -121,7 +122,24 @@ bool create (const char* file, unsigned initial_size){
 }
 
 
-int read (int fd, void* buffer, unsigned size){
+int
+read (int fd, uint8_t* buffer, unsigned size){
+
+    if (fd == 0){
+        for (int i= 0; i< size; i++){
+            buffer[i] =  input_getc();
+        }
+        return size;
+    }
+    else {
+        struct opened_file_entry *readFromFileEntry = list_search(&thread_current()->opened_files,fd);
+        if (readFromFileEntry== NULL)
+            return -1;
+        else {
+            return file_read(readFromFileEntry->file,buffer,size);
+        }
+    }
+
 
 }
 
