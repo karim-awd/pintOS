@@ -4,13 +4,36 @@
 #include <syscall-nr.h>
 #include <threads/vaddr.h>
 #include <filesys/filesys.h>
+#include <devices/shutdown.h>
 #include <threads/malloc.h>
 #include <filesys/file.h>
+#include <sys/types.h>
 #include <devices/input.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "list.h"
 #include "process.h"
+
+void halt();
+void exit(int status);
+pid_t exec(const char* cmd_line);
+int wait(pid_t pid);
+bool create(const char* file, unsigned initial_size);
+bool remove(const char* file);
+int open(const char* file);
+int filesize (int fd);
+int read (int fd, uint8_t* buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size) ;
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
+void close(int fd);
+static void syscall_handler(struct intr_frame *);
+bool validate(int* ptr , int argumentsNum);
+
+//todo note that you send f->esp (void*) and recive an (int*);
+
+pthread_mutex_t writeMutex;  // todo  mutex lock on write (at least)
+
 
 struct opened_file_entry {
     struct file * file;
@@ -35,12 +58,6 @@ struct opened_file_entry* list_search(struct list* files, int fd)
 
 
 
-static void syscall_handler(struct intr_frame *);
-bool validate(int* ptr , int argumentsNum);
-static int write(int fd, void *pVoid, unsigned int size);
-
-
-
 
 void
 syscall_init(void) {
@@ -55,56 +72,117 @@ syscall_handler(struct intr_frame *f UNUSED) {
 
     //validation
     if(!validate(f->esp, 1)){  // bad pointer
-        //exit(-1);
+        exit(-1);
     }
 
 
-    switch (*(int *) (f->esp)) {
+    switch (*(int *)(f->esp)) {
         case SYS_HALT : {
+            halt();
             break;
         }
-        case SYS_EXIT : {
+        case SYS_EXIT : {                             /////
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            int status = *(int*)(f->esp+4);
+            exit(status);
+
             break;
         }
         case SYS_EXEC : {
+            if(!validate(f->esp+4,1)) {
+                exit(-1);
+            }
+            const char* cmd_line = (const char*)(*(int*)(f->esp+4));  //todo char* from int warning
+            f->eax = (uint32_t) exec(cmd_line);
             break;
         }
         case SYS_WAIT : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            f->eax = wait(*(int*)(f->esp+4));
             break;
         }
         case SYS_CREATE : {
+            if(!validate(f->esp+4,2)){
+                exit(-1);
+            }
+            const char* file =(const char*)*((int*)(f->esp+4));         //todo char* from int warning
+            unsigned initial_size = *((unsigned *)(f->esp+4));
+            f->eax = (uint32_t) create(file, initial_size);
             break;
         }
         case SYS_REMOVE : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            f->eax = (uint32_t) remove((const char*)(f->esp+4));
             break;
         }
         case SYS_OPEN : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            const char* file = (const char*)*((int*)(f->esp+4));       //todo char* from int warning
+            f->eax = (uint32_t) open(file);
             break;
         }
         case SYS_FILESIZE : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            int fd = *((int*)(f->esp+4));
+            f->eax = (uint32_t) filesize(fd);
             break;
         }
         case SYS_READ : {
+            if(!validate(f->esp+4,3)){
+                exit(-1);
+            }
+            int fd = *((int*)(f->esp+4));
+            void* buffer = (uint8_t*)(*((int*)(f->esp+8)));
+            unsigned size =*((unsigned*)(f->esp+12));
+
+            f->eax = (uint32_t)read(fd,buffer,size);
             break;
         }
         case SYS_WRITE : {
 
-            validate(((int*)f->esp +1),3);
+            if(!validate(((int*)f->esp+4),3)){
+                exit(-1);
+            }
 
-            int fd =*((int*)f->esp + 1);
-            void* buffer = (void*)(*((int*)f->esp + 2));
-            unsigned size =*((unsigned*)f->esp + 3);
-            //stored in f->eax
+            int fd =*((int*)(f->esp+4));
+            void* buffer = (void*)(*((int*)(f->esp+8)));
+            unsigned size =*((unsigned*)(f->esp+12));
+
             f->eax = (uint32_t) write(fd, buffer, size);
             break;
         }
         case SYS_SEEK : {
+            if(!validate(f->esp+4,2)){
+                exit(-1);
+            }
+            int fd = *((int*)(f->esp+4));
+            unsigned position =(unsigned)(*(int*)(f->esp+8));
+            seek(fd,position);
             break;
         }
         case SYS_TELL : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            f->eax = tell(*((int*)(f->esp+4)));
             break;
         }
         case SYS_CLOSE : {
+            if(!validate(f->esp+4,1)){
+                exit(-1);
+            }
+            int fd = *(int*)(f->esp+4);
+            close(fd);
             break;
         }
 
@@ -116,14 +194,65 @@ syscall_handler(struct intr_frame *f UNUSED) {
   thread_exit ();
 */
 }
+void halt(){
+    shutdown_power_off();
+}
 
-bool create (const char* file, unsigned initial_size){
+void exit(int status){
+
+}
+
+pid_t exec(const char* cmd_line){
+    pid_t newId = process_execute(cmd_line);
+    /* todo he parent process cannot return from the exec
+     until it knows whether the child process
+     successfully loaded its executable
+    */
+    wait(newId);
+    if(newId == TID_ERROR){
+        return -1;
+    }
+
+    return newId;
+}
+
+int wait(pid_t pid){
+    process_wait(pid);
+}
+
+bool create(const char* file, unsigned initial_size){
     return filesys_create(file, initial_size);
 }
 
+bool remove(const char* file){
+    //todo if wrong
+    /**
+     * Remove the file but keep it for all running processes currently using it
+     * if there are descriptors associtaed with the File file then delay its removal
+     * until they close it
+     */
+    return filesys_remove(file);
+}
 
-int
-read (int fd, uint8_t* buffer, unsigned size){
+int open (const char *file){
+    struct file * openedFile = filesys_open(file);
+    if (openedFile == NULL)
+        return -1;
+    else{
+        struct opened_file_entry *file_entry = malloc(sizeof(*file_entry));
+        file_entry->file = openedFile;
+        file_entry->fd = thread_current()->fd_value;
+        thread_current()->fd_value ++;
+        list_push_back(&thread_current()->opened_files, &file_entry->elem);
+        return file_entry->fd;
+    }
+}
+
+int filesize (int fd){
+    return file_length(list_search(&thread_current()->opened_files,fd)->file);
+}
+
+int read (int fd, uint8_t* buffer, unsigned size){
 
     if (fd == 0){
         for (int i= 0; i< size; i++){
@@ -143,32 +272,32 @@ read (int fd, uint8_t* buffer, unsigned size){
 
 }
 
-
-int write(int fd, void *pVoid, unsigned int size) {
-    return 0;
+int write(int fd, const void *buffer, unsigned size)  {
+    if(fd == 1 ){
+        putbuf(buffer,size);
+        return size;                 // todo there is no limit on size when using putbuf
+    }
+    struct file* currentFile  = list_search(&thread_current()->opened_files,fd)->file;
+    if(currentFile == NULL){
+        return 0;
+    }
+    return file_write(currentFile,buffer,size);// size in file_write is off_t  and the return is off_t
 }
 
+void seek(int fd, unsigned position){
 
+}
 
-int open (const char *file){
-    struct file * openedFile = filesys_open(filesys_open);
-    if (openedFile == NULL)
-        return -1;
-    else{
-
-        struct opened_file_entry *file_entry = malloc(sizeof(*file_entry));
-        file_entry->file = openedFile;
-        file_entry->fd = thread_current()->fd_value;
-        thread_current()->fd_value ++;
-        list_push_back(&thread_current()->opened_files, &file_entry->elem);
-        return file_entry->fd;
+unsigned tell(int fd){
+    struct file * currentFile =list_search(&thread_current()->opened_files,fd)->file;
+    if(currentFile != NULL){
+        return (unsigned)file_tell(currentFile);
     }
 }
 
-int filesize (int fd){
-    return file_length(list_search(&thread_current()->opened_files,fd)->file);
-}
+void close(int fd){
 
+}
 
 
 bool
