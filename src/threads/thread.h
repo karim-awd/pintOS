@@ -152,4 +152,7 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 struct thread *thread_get(tid_t tid);
 
+void acquire_files_lock();
+void release_files_lock();
+
 #endif /* threads/thread.h */
