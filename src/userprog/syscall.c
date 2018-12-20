@@ -84,7 +84,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
-            int status = *(int*)(f->esp+4);
+            int status = *((int*)(f->esp+4));
             exit(status);
 
             break;
@@ -109,7 +109,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             const char* file =(const char*)*((int*)(f->esp+4));         //todo char* from int warning
-            unsigned initial_size = *((unsigned *)(f->esp+4));
+            unsigned initial_size = *((unsigned *)(f->esp+8));
             f->eax = (uint32_t) create(file, initial_size);
             break;
         }
@@ -202,21 +202,21 @@ void exit(int status){
 }
 
 pid_t exec(const char* cmd_line){
-    pid_t newId = process_execute(cmd_line);
-    /* todo he parent process cannot return from the exec
-     until it knows whether the child process
-     successfully loaded its executable
-    */
-    wait(newId);
-    if(newId == TID_ERROR){
-        return -1;
-    }
+//    pid_t newId = process_execute(cmd_line);
+//    /* todo he parent process cannot return from the exec
+//     until it knows whether the child process
+//     successfully loaded its executable
+//    */
+//    //wait(newId);
+//    if(newId == TID_ERROR){
+//        return -1;
+//    }
 
-    return newId;
+    return process_execute(cmd_line);
 }
 
 int wait(pid_t pid){
-    process_wait(pid);
+    return process_wait(pid);
 }
 
 bool create(const char* file, unsigned initial_size){

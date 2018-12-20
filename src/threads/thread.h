@@ -101,6 +101,8 @@ struct thread
     struct thread *my_parent;
     struct semaphore waiting_semaphore;
     int valueMlhashLzma;
+    struct lock waiting_lock;
+    struct condition cond;
 
 
 
