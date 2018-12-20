@@ -285,7 +285,13 @@ int write(int fd, const void *buffer, unsigned size)  {
 }
 
 void seek(int fd, unsigned position){
-
+    struct file* file = list_search(&thread_current()->opened_files,fd)->file;
+    if(file!=NULL){
+        if(position <= 0){
+            position = 0;
+        }
+        file_seek(file,position);
+    }
 }
 
 unsigned tell(int fd){
