@@ -102,7 +102,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
+            acquire_files_lock();
             f->eax = wait(*(int*)(f->esp+4));
+            release_files_lock();
             break;
         }
         case SYS_CREATE : {
@@ -111,14 +113,18 @@ syscall_handler(struct intr_frame *f UNUSED) {
             }
             const char* file =(const char*)*((int*)(f->esp+4));         //todo char* from int warning
             unsigned initial_size = *((unsigned *)(f->esp+4));
+            acquire_files_lock();
             f->eax = (uint32_t) create(file, initial_size);
+            release_files_lock();
             break;
         }
         case SYS_REMOVE : {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
+            acquire_files_lock();
             f->eax = (uint32_t) remove((const char*)(f->esp+4));
+            release_files_lock();
             break;
         }
         case SYS_OPEN : {
@@ -126,7 +132,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             const char* file = (const char*)*((int*)(f->esp+4));       //todo char* from int warning
+            acquire_files_lock();
             f->eax = (uint32_t) open(file);
+            release_files_lock();
             break;
         }
         case SYS_FILESIZE : {
@@ -134,7 +142,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             int fd = *((int*)(f->esp+4));
+            acquire_files_lock();
             f->eax = (uint32_t) filesize(fd);
+            release_files_lock();
             break;
         }
         case SYS_READ : {
@@ -144,8 +154,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             int fd = *((int*)(f->esp+4));
             void* buffer = (uint8_t*)(*((int*)(f->esp+8)));
             unsigned size =*((unsigned*)(f->esp+12));
-
+            acquire_files_lock();
             f->eax = (uint32_t)read(fd,buffer,size);
+            release_files_lock();
             break;
         }
         case SYS_WRITE : {
@@ -157,8 +168,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             int fd =*((int*)(f->esp+4));
             void* buffer = (void*)(*((int*)(f->esp+8)));
             unsigned size =*((unsigned*)(f->esp+12));
-
+            acquire_files_lock();
             f->eax = (uint32_t) write(fd, buffer, size);
+            release_files_lock();
             break;
         }
         case SYS_SEEK : {
@@ -167,14 +179,18 @@ syscall_handler(struct intr_frame *f UNUSED) {
             }
             int fd = *((int*)(f->esp+4));
             unsigned position =(unsigned)(*(int*)(f->esp+8));
+            acquire_files_lock();
             seek(fd,position);
+            release_files_lock();
             break;
         }
         case SYS_TELL : {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
+            acquire_files_lock();
             f->eax = tell(*((int*)(f->esp+4)));
+            release_files_lock();
             break;
         }
         case SYS_CLOSE : {
@@ -182,7 +198,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             int fd = *(int*)(f->esp+4);
+            acquire_files_lock();
             close(fd);
+            release_files_lock();
             break;
         }
 
