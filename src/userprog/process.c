@@ -65,18 +65,14 @@ process_execute(const char *file_name) {
         //palloc_free_page(exec_name);
     }
     struct thread *t = thread_get(tid);
-    list_init(&t->children_list);
+    list_init(&(t->children_list));
     t->my_parent = thread_current();
-    sema_init(t->waiting_semaphore,0);
+    sema_init(&(t->waiting_semaphore),0);
 
-    struct child temp = {.child_tid =tid , .exit_status = -1 , .alive = true , .parent_is_waiting = false };
+    struct child temp = {.child_tid = tid , .exit_status = -1 , .alive = true , .parent_is_waiting = false };
     struct child *c = &temp;
-
-    list_push_front(&thread_current()->children_list , &(c->child_elem));
-
-
-
-
+    printf("Ana hena\n");
+    list_push_front(&(thread_current()->children_list) , &(c->child_elem));
     return tid;
 }
 
@@ -137,10 +133,9 @@ process_wait(tid_t child_tid UNUSED) {
             }
             else {
                 c->parent_is_waiting = true;
-                sema_down(thread_current() ->waiting_semaphore);
+                sema_down(&thread_current() ->waiting_semaphore);
                 return c->exit_status;
             }
-
         }
     }
     return -1;
@@ -167,7 +162,7 @@ process_exit(int status) {
             c->exit_status = status;
             c->alive = false;
             if (c->parent_is_waiting){
-                sema_up(my_parent->waiting_semaphore);
+                sema_up(&my_parent->waiting_semaphore);
             }
             break;
         }
