@@ -7,8 +7,8 @@
 #include <devices/shutdown.h>
 #include <threads/malloc.h>
 #include <filesys/file.h>
-#include <sys/types.h>
 #include <devices/input.h>
+#include <lib/user/syscall.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "list.h"
@@ -22,7 +22,7 @@ bool create(const char* file, unsigned initial_size);
 bool remove(const char* file);
 int open(const char* file);
 int filesize (int fd);
-int read (int fd, uint8_t* buffer, unsigned size);
+int read (int fd, void* buffer, unsigned size);
 int write(int fd, const void *buffer, unsigned size) ;
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
@@ -32,7 +32,6 @@ bool validate(int* ptr , int argumentsNum);
 
 //todo note that you send f->esp (void*) and recive an (int*);
 
-pthread_mutex_t writeMutex;  // todo  mutex lock on write (at least)
 
 
 struct opened_file_entry {
@@ -142,7 +141,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
                 exit(-1);
             }
             int fd = *((int*)(f->esp+4));
-            void* buffer = (uint8_t*)(*((int*)(f->esp+8)));
+            void* buffer = (void*)(*((int*)(f->esp+8)));
             unsigned size =*((unsigned*)(f->esp+12));
 
             f->eax = (uint32_t)read(fd,buffer,size);
@@ -199,7 +198,7 @@ void halt(){
 }
 
 void exit(int status){
-
+    thread_exit(status);
 }
 
 pid_t exec(const char* cmd_line){
@@ -252,11 +251,12 @@ int filesize (int fd){
     return file_length(list_search(&thread_current()->opened_files,fd)->file);
 }
 
-int read (int fd, uint8_t* buffer, unsigned size){
+int read (int fd, void* buffer, unsigned size){
 
+    uint8_t* buf = (uint8_t*) buffer;
     if (fd == 0){
         for (int i= 0; i< size; i++){
-            buffer[i] =  input_getc();
+            buf[i] =  input_getc();
         }
         return size;
     }
@@ -265,7 +265,7 @@ int read (int fd, uint8_t* buffer, unsigned size){
         if (readFromFileEntry== NULL)
             return -1;
         else {
-            return file_read(readFromFileEntry->file,buffer,size);
+            return file_read(readFromFileEntry->file,buf,size);
         }
     }
 
@@ -315,8 +315,8 @@ validate(int* ptr , int argumentsNum){
         int* currentPtr =ptr+argumentIndex;
         if (currentPtr != NULL) {  // Null Check
             if(is_user_vaddr(currentPtr)){   // in User Virtual Memory space check
-                uint32_t* pd = active_pd();                                   // in a page
-                if(pagedir_get_page(pd,currentPtr) != NULL){
+                //uint32_t* pd = active_pd();                                   // in a page
+                if(pagedir_get_page(thread_current()->pagedir,currentPtr) != NULL){
                     return true;
                 }
             }
