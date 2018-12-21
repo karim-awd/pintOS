@@ -104,7 +104,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
     // get system call number
 
     //validation
-    if(!validate(f->esp, 1)){  // bad pointer
+    if(!validate(f->esp, 1)|| !validate(f->esp+4, 1) || !validate(f->esp+8, 1) || !validate(f->esp+12, 1)){  // bad pointer
         exit(-1);
     }
 
@@ -127,7 +127,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
             if(!validate(f->esp+4,1)) {
                 exit(-1);
             }
-            const char* cmd_line = (const char*)(*(int*)(f->esp+4));  //todo char* from int warning
+            char* cmd_line = (const char*)(*(int*)(f->esp+4));  //todo char* from int warning
             f->eax = (uint32_t) exec(cmd_line);
             break;
         }
@@ -239,12 +239,6 @@ syscall_handler(struct intr_frame *f UNUSED) {
         }
 
     }
-
-
-/*
-  printf ("system call!\n");
-  thread_exit ();
-*/
 }
 void halt(){
     shutdown_power_off();
@@ -255,21 +249,32 @@ void exit(int status){
 }
 
 pid_t exec(const char* cmd_line){
-    if(!validate(cmd_line,1)){
+
+    if(!validate(cmd_line,1) || !validate(cmd_line+1,1) || !validate(cmd_line+2,1) || !validate(cmd_line+3,1)){
         exit(-1);
     }
+
+    if ( strlen(cmd_line) >= PGSIZE ){
+        printf("very large strings(>PGSIZE) are not supported\n");
+        return -1;
+    }
+    // non empty string and it does not start with a space(args delimiter)
+    if (strlen(cmd_line) == 0 || cmd_line[0] == ' '){
+        printf("the command string should be non-empty and doesn't start with a space %s\n", cmd_line);
+        return -1;
+    }
     pid_t newId = process_execute(cmd_line);
+
+
     /* todo he parent process cannot return from the exec
      until it knows whether the child process
      successfully loaded its executable
     */
-    //wait(newId);
     if(newId == TID_ERROR){
         return -1;
     }
 
     return newId;
-    //return process_execute(cmd_line);
 }
 
 int wait(pid_t pid){
@@ -419,7 +424,6 @@ validate(void* ptr , int argumentsNum){
         void* currentPtr =ptr+argumentIndex;
         if (currentPtr != NULL && currentPtr>0) {  // Null Check
             if(is_user_vaddr(currentPtr)){   // in User Virtual Memory space check
-                //uint32_t* pd = active_pd();                                   // in a page
                 if(pagedir_get_page(thread_current()->pagedir,currentPtr) != NULL){
                     return true;
                 }

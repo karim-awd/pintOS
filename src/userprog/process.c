@@ -63,6 +63,7 @@ process_execute(const char *file_name) {
     if (tid == TID_ERROR) {
         palloc_free_page(fn_copy);
         palloc_free_page(exec_name);
+        return -1;
     }
     struct thread *t = thread_get(tid);
     list_init(&t->children_list);
@@ -176,6 +177,8 @@ process_exit(int status) {
     printf ("%s: exit(%d)\n",thread_current()->name, status );
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
+
+    file_close (thread_current()->executable);
     pd = cur->pagedir;
     if (pd != NULL) {
         /* Correct ordering here is crucial.  We must set
@@ -392,8 +395,12 @@ load(const char *file_name, void (**eip)(void), void **esp) {
 
     done:
     /* We arrive here whether the load is successful or not. */
-
-    file_close(file);
+    if(success){
+        thread_current()->executable = file;
+        // deny write to executables
+        file_deny_write(file);
+    }else
+        file_close(file);
     return success;
 }
 

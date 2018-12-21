@@ -105,6 +105,8 @@ struct thread
     struct lock waiting_lock;
     struct condition cond;
 
+    struct file *executable;
+
 
 
 #ifdef USERPROG
