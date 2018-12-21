@@ -118,7 +118,7 @@ syscall_handler(struct intr_frame *f UNUSED) {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
-            int status = *(int*)(f->esp+4);
+            int status = *((int*)(f->esp+4));
             exit(status);
 
             break;
@@ -135,9 +135,9 @@ syscall_handler(struct intr_frame *f UNUSED) {
             if(!validate(f->esp+4,1)){
                 exit(-1);
             }
-            acquire_files_lock();
+            //acquire_files_lock();
             f->eax = wait(*(int*)(f->esp+4));
-            release_files_lock();
+            //release_files_lock();
             break;
         }
         case SYS_CREATE : {
@@ -269,10 +269,11 @@ pid_t exec(const char* cmd_line){
     }
 
     return newId;
+    //return process_execute(cmd_line);
 }
 
 int wait(pid_t pid){
-    process_wait(pid);
+    return process_wait(pid);
 }
 
 bool create(const char* file, unsigned initial_size){
